@@ -4,6 +4,7 @@ These rules apply to every task in this project unless explicitly overridden.
 Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 ## Rule 1 — Think Before Coding
+Scope: ambiguity in the request, before work starts.
 State assumptions explicitly. If uncertain, ask rather than guess.
 Present multiple interpretations when ambiguity exists.
 Push back when a simpler approach exists.
@@ -24,19 +25,22 @@ Define success criteria. Loop until verified.
 Don't follow steps. Define success and iterate.
 Strong success criteria let you loop independently.
 
-## Rule 5 — Use the model only for judgment calls
-Use me for: classification, drafting, summarization, extraction.
-Do NOT use me for: routing, retries, deterministic transforms.
+## Rule 5 — Use a model only for judgment calls
+Scope: code we write that calls an LLM. Not this session.
+Call a model for: classification, drafting, summarization, extraction.
+Do not call a model for: routing, retries, deterministic transforms, parsing.
 If code can answer, code answers.
 
 ## Rule 6 — Token budgets are not advisory
 Per-task: 4,000 tokens. Per-session: 30,000 tokens.
 If approaching budget, summarize and start fresh.
 Surface the breach. Do not silently overrun.
+No token counter is available in-session, so estimate conservatively and stop early
+rather than assume headroom. Never claim a budget was respected when it wasn't measured.
 
 ## Rule 7 — Surface conflicts, don't average them
-If two patterns contradict, pick one (more recent / more tested).
-Explain why. Flag the other for cleanup.
+Scope: two existing patterns in the codebase that contradict each other.
+Pick one (more recent / more tested). Explain why. Flag the other for cleanup.
 Don't blend conflicting patterns.
 
 ## Rule 8 — Read before you write
@@ -57,6 +61,7 @@ Conformance > taste inside the codebase.
 If you genuinely think a convention is harmful, surface it. Don't fork silently.
 
 ## Rule 12 — Fail loud
+Scope: reporting results, after work is done.
 "Completed" is wrong if anything was skipped silently.
-"Tests pass" is wrong if any were skipped.
-Default to surfacing uncertainty, not hiding it.
+"Tests pass" is wrong if any were skipped, or if the suite was never run.
+Report what was actually verified, not what was intended.
