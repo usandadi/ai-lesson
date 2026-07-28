@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SAP user/role provisioning</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border: 1px solid #ccc; padding: .35rem .5rem; text-align: left; }
+    pre { background: #f5f5f5; padding: .75rem; overflow-x: auto; max-height: 28rem; }
+    .bad { color: #a00; }
+    .ok { color: #060; }
+    .warn { background: #fff6d5; border: 1px solid #e0c060; padding: .75rem; margin: 1rem 0; }
+    form.inline { display: inline; }
+    label { display: block; margin: .4rem 0; }
+    textarea { width: 100%; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <h1><a href="{{ url_for('index') }}">SAP user/role provisioning</a></h1>
+  {% block body %}{% endblock %}
+</body>
+</html>

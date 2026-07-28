@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block body %}
+
+<p><a href="{{ url_for('review', run_id=state.id) }}">&larr; back to run {{ state.id }}</a></p>
+
+{% if message %}<p class="warn">{{ message }}</p>{% endif %}
+
+{% if rollback_plan %}
+<h2>Rollback plan</h2>
+<p>Only what this run added. Roles the user already held are never touched.</p>
+<ul>{% for line in rollback_plan %}<li>{{ line }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% if outcome %}
+<h2>{% if probe %}Probe result{% elif dry_run %}Dry run{% else %}Execution{% endif %}</h2>
+<p class="{{ 'ok' if outcome.ok else 'bad' }}">{{ outcome.message }}</p>
+
+{% if outcome.summary %}
+<table>
+  <tr><th>Created</th><th>Updated</th><th>Planned</th><th>Failed</th><th>Roles added</th></tr>
+  <tr>
+    <td>{{ outcome.summary.created }}</td>
+    <td>{{ outcome.summary.updated }}</td>
+    <td>{{ outcome.summary.planned }}</td>
+    <td class="{{ 'bad' if outcome.summary.failed else '' }}">{{ outcome.summary.failed }}</td>
+    <td>{{ outcome.summary.roles_added }}</td>
+  </tr>
+</table>
+{% endif %}
+
+<h2>Journal</h2>
+<table>
+  <tr><th>User</th><th>Status</th><th>Roles added</th><th>Already present</th><th>Detail</th></tr>
+  {% for entry in outcome.entries %}
+  <tr>
+    <td>{{ entry.get('user') or '—' }}</td>
+    <td class="{{ 'bad' if entry.get('status') in ['failed', 'aborted'] else '' }}">{{ entry.get('status') }}</td>
+    <td>{{ (entry.get('roles_added') or []) | join(', ') }}</td>
+    <td>{{ (entry.get('roles_skipped') or []) | join(', ') }}</td>
+    <td>{{ entry.get('detail') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if state.executed %}
+<h2>Roll back this run</h2>
+<form method="post" action="{{ url_for('rollback_run', run_id=state.id) }}">
+  <label><input type="radio" name="mode" value="dry" checked> Show me what it would undo</label>
+  <label><input type="radio" name="mode" value="execute"> Execute the rollback</label>
+  <button type="submit">Roll back</button>
+</form>
+{% endif %}
+
+{% endblock %}

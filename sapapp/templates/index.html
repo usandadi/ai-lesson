@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h2>Mass import from a spreadsheet</h2>
+<form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+  <input type="file" name="sheet" accept=".xlsx,.xlsm,.csv" required>
+  <button type="submit">Read sheet</button>
+</form>
+<p>Column meanings are inferred from the header row — you confirm the mapping before
+anything is generated.</p>
+
+<h2>Or enter a few by hand</h2>
+<form method="post" action="{{ url_for('manual') }}">
+  <label>One user per line: <code>USERNAME | Last name | email | ROLE1, ROLE2</code></label>
+  <textarea name="entries" rows="6" placeholder="JDOE | Doe | j.doe@example.com | Z_FIN_DISPLAY, Z_MM_POST"></textarea>
+  <button type="submit">Build</button>
+</form>
+
+{% if runs %}
+<h2>This session</h2>
+<table>
+  <tr><th>Run</th><th>Source</th><th>Users</th><th>Status</th></tr>
+  {% for run in runs %}
+  <tr>
+    <td><a href="{{ url_for('review', run_id=run.id) }}">{{ run.id }}</a></td>
+    <td>{{ run.source }}</td>
+    <td>{{ run.users | length }}</td>
+    <td>{% if run.problems %}<span class="bad">{{ run.problems | length }} problem(s)</span>
+        {% elif run.executed %}executed{% else %}ready{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% endblock %}

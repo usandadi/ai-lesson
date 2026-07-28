@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block body %}
+
+<p><a href="{{ url_for('index') }}">&larr; back</a> &middot; run <code>{{ state.id }}</code>
+   &middot; {{ state.source }}</p>
+
+<h2>Inferred column mapping</h2>
+<table>
+  <tr><th>Field</th><th>Column header</th></tr>
+  {% for field, header in state.mapping.items() %}
+  <tr><td>{{ field }}</td><td>{{ header }}</td></tr>
+  {% endfor %}
+</table>
+{% if state.unmapped %}
+<p class="warn"><strong>Unmapped columns, ignored:</strong> {{ state.unmapped | join(', ') }}.
+   If one of these was meant to carry a field, add its spelling to
+   <code>SYNONYMS</code> in <code>excel_parser.py</code> and re-upload.</p>
+{% endif %}
+
+<h2>{{ state.users | length }} user(s)</h2>
+<table>
+  <tr><th>User</th><th>Name</th><th>Roles</th><th>Sheet rows</th></tr>
+  {% for user in state.users %}
+  <tr>
+    <td>{{ user.username }}</td>
+    <td>{{ user.first_name }} {{ user.last_name }}</td>
+    <td>{{ user.roles | map(attribute='name') | join(', ') }}</td>
+    <td>{{ user.source_rows | join(', ') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% if state.problems %}
+<h2 class="bad">{{ state.problems | length }} problem(s) — nothing will be generated</h2>
+<p>Validation is fail-closed by design: a half-valid script is worse than none.</p>
+<ul>
+  {% for problem in state.problems %}<li class="bad">{{ problem.describe() }}</li>{% endfor %}
+</ul>
+
+{% else %}
+<h2>Generated script</h2>
+<p>This exact file is what runs — review it before executing.</p>
+<pre>{{ script }}</pre>
+
+<h2>Run</h2>
+<p class="warn">Attaches to a SAP GUI session you are already logged into. Confirm the SID and
+client below: the app aborts if the open session is not the one you name.</p>
+<form method="post" action="{{ url_for('execute', run_id=state.id) }}">
+  <label>Expected SID <input name="sid" placeholder="SBX"></label>
+  <label>Expected client <input name="client" placeholder="100"></label>
+  <label><input type="radio" name="mode" value="dry" checked> Dry run — read only, writes nothing</label>
+  <label><input type="radio" name="mode" value="execute"> Execute — creates users and assigns roles</label>
+  <button type="submit">Go</button>
+</form>
+
+<form method="post" action="{{ url_for('probe', run_id=state.id) }}" class="inline">
+  <button type="submit">Run control probe first</button>
+</form>
+<p>The probe checks that the SU01 control paths in <code>screen_ids.py</code> match this
+   system. They are unverified defaults until you do.</p>
+{% endif %}
+
+{% endblock %}
