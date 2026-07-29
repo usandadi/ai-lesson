@@ -84,8 +84,10 @@ End Sub
 ' Fails loudly rather than pressing whatever happens to sit at that path.
 Function FindOrFail(controlId, ByRef ok)
   On Error Resume Next
+  Set FindOrFail = Nothing
   Set FindOrFail = Session.findById(controlId)
   If Err.Number <> 0 Then
+    Set FindOrFail = Nothing
     ok = False
     Err.Clear
   ElseIf FindOrFail Is Nothing Then
