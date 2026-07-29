@@ -25,7 +25,7 @@ def test_dry_run_script_declares_dry_run_and_journals_a_plan():
     assert '"planned"' in script
     # The dry-run branch exits before the save press.
     plan_at = script.index('JLog "user", uname, "planned"')
-    save_at = script.index("FindOrFail(ID_SAVE, ok).press")
+    save_at = script.index("Set fld = FindOrFail(ID_SAVE, ok)")
     assert plan_at < save_at
 
 
@@ -55,7 +55,7 @@ def test_existing_roles_are_read_before_anything_is_added():
 def test_save_is_followed_by_a_status_bar_check():
     """GUI Scripting raises nothing on a failed save — sbar is the only signal."""
     script = build_run_script(USERS, "j.jsonl", dry_run=False)
-    save_at = script.index("FindOrFail(ID_SAVE, ok).press")
+    save_at = script.index("Set fld = FindOrFail(ID_SAVE, ok)")
     check_at = script.index("If SaveFailed() Then", save_at)
     assert save_at < check_at
     # And SaveFailed must actually inspect the status bar, not just exist.
@@ -95,7 +95,7 @@ def test_snc_name_is_written_only_when_creating_a_user():
     assert 'ProcessUser "JDOE", "Doe", "", "", "p:CN=JDOE@EXAMPLE.COM"' in script
     # The SNC write sits inside the create branch, after the create press and
     # before that branch closes.
-    create_at = script.index("FindOrFail(ID_CREATE, ok).press")
+    create_at = script.index("Set fld = FindOrFail(ID_CREATE, ok)")
     snc_at = script.index("Set fld = FindOrFail(ID_SNCNAME, ok)")
     append_at = script.index("added = AppendRoles(roleData, existing)")
     assert create_at < snc_at < append_at

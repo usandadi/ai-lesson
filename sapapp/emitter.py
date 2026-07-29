@@ -185,7 +185,12 @@ Function UserExists(uname)
     Exit Function
   End If
   fld.Text = uname
-  FindOrFail(ID_DISPLAY, ok).press
+  Set fld = FindOrFail(ID_DISPLAY, ok)
+  If Not ok Then
+    UserExists = -1
+    Exit Function
+  End If
+  fld.press
   If SbarType() = "E" Then
     UserExists = 0
   Else
@@ -312,9 +317,20 @@ Sub ProcessUser(uname, lastname, firstname, email, sncname, ugroup, pwd, roleDat
   If ok Then fld.Text = uname
 
   If exists = 1 Then
-    FindOrFail(ID_CHANGE, ok).press
+    Set fld = FindOrFail(ID_CHANGE, ok)
   Else
-    FindOrFail(ID_CREATE, ok).press
+    Set fld = FindOrFail(ID_CREATE, ok)
+  End If
+  If Not ok Then
+    Failures = Failures + 1
+    JLog "user", uname, "failed", "change/create button not found", Array(), skipped
+    If Failures >= ABORT_AFTER Then Aborted = True
+    GotoSU01
+    Exit Sub
+  End If
+  fld.press
+
+  If exists <> 1 Then
     created = True
     Set tab = FindOrFail(ID_TAB_ADDRESS, ok)
     If ok Then tab.Select
@@ -354,7 +370,18 @@ Sub ProcessUser(uname, lastname, firstname, email, sncname, ugroup, pwd, roleDat
 
   added = AppendRoles(roleData, existing)
 
-  FindOrFail(ID_SAVE, ok).press
+  Set fld = FindOrFail(ID_SAVE, ok)
+  If Not ok Then
+    Failures = Failures + 1
+    JLog "user", uname, "failed", "save button not found", Array(), skipped
+    If Failures >= ABORT_AFTER Then
+      Aborted = True
+      JLog "run", "", "aborted", "stopped after " & Failures & " consecutive failures", Array(), Array()
+    End If
+    GotoSU01
+    Exit Sub
+  End If
+  fld.press
 
   ' GUI Scripting raises nothing on a failed save - the status bar is the only signal.
   If SaveFailed() Then
@@ -387,7 +414,12 @@ Sub RemoveRoles(uname, roles)
   GotoSU01
   Set tab = FindOrFail(ID_UNAME, ok)
   If ok Then tab.Text = uname
-  FindOrFail(ID_CHANGE, ok).press
+  Set tab = FindOrFail(ID_CHANGE, ok)
+  If Not ok Then
+    JLog "rollback", uname, "failed", "change button not found", Array(), Array()
+    Exit Sub
+  End If
+  tab.press
   Set tab = FindOrFail(ID_TAB_ROLES, ok)
   If ok Then tab.Select
   Set grid = FindOrFail(ID_GRID, ok)
@@ -414,7 +446,12 @@ Sub RemoveRoles(uname, roles)
     Exit Sub
   End If
 
-  FindOrFail(ID_SAVE, ok).press
+  Set tab = FindOrFail(ID_SAVE, ok)
+  If Not ok Then
+    JLog "rollback", uname, "failed", "save button not found", Array(), Array()
+    Exit Sub
+  End If
+  tab.press
   If SaveFailed() Then
     JLog "rollback", uname, "failed", SbarText(), Array(), Array()
   Else
@@ -433,7 +470,12 @@ Sub DeleteUser(uname)
     JLog "rollback", uname, "planned", "would delete this user", Array(), Array()
     Exit Sub
   End If
-  FindOrFail(ID_DELETE, ok).press
+  Set fld = FindOrFail(ID_DELETE, ok)
+  If Not ok Then
+    JLog "rollback", uname, "failed", "delete button not found", Array(), Array()
+    Exit Sub
+  End If
+  fld.press
   ' SU01 asks for confirmation before deleting.
   On Error Resume Next
   Session.findById("wnd[1]/usr/btnSPOP-OPTION1").press
