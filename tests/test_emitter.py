@@ -7,6 +7,7 @@ that will run, which is the part a refactor can silently drop.
 
 from sapapp.emitter import build_probe_script, build_rollback_script, build_run_script
 from sapapp.models import RoleSpec, UserSpec
+from sapapp.screen_ids import SU01_IDS
 
 USERS = [
     UserSpec(
@@ -48,7 +49,7 @@ def test_roles_are_appended_at_a_computed_row_never_a_fixed_index():
 def test_existing_roles_are_read_before_anything_is_added():
     """Feeds both the additive merge and the rollback delta."""
     script = build_run_script(USERS, "j.jsonl")
-    assert "Function ReadExistingRoles()" in script
+    assert "Function ReadExistingRoles(ByRef ok)" in script
     assert "existing.Exists(name)" in script
 
 
@@ -97,7 +98,7 @@ def test_snc_name_is_written_only_when_creating_a_user():
     # before that branch closes.
     create_at = script.index("Set fld = FindOrFail(ID_CREATE, ok)")
     snc_at = script.index("Set fld = FindOrFail(ID_SNCNAME, ok)")
-    append_at = script.index("added = AppendRoles(roleData, existing)")
+    append_at = script.index("added = AppendRoles(roleData, existing, ok)")
     assert create_at < snc_at < append_at
 
 
@@ -124,6 +125,66 @@ def test_probe_checks_controls_without_writing():
     assert "username_field" in script
     assert "WScript.Quit missing" in script
     assert "ID_SAVE" not in script
+
+
+def test_creating_a_user_fails_loudly_when_the_last_name_control_is_missing():
+    """SU01 will not save without a surname, so a missing last-name control cannot be
+    skipped the way an optional field can. Skipping it silently produced SAP's "fill in
+    all required entry fields" at save, which names the wrong cause and is why user
+    creation appeared to fail for reasons nobody could diagnose."""
+    script = build_run_script(USERS, "j.jsonl", dry_run=False)
+
+    # The old silent-skip form must not come back.
+    assert "If ok Then fld.Text = lastname" not in script
+    assert '"last name field not found' in script
+
+    # And it must abort before the save, not after.
+    fail_at = script.index('JLog "user", uname, "failed", "last name field not found')
+    save_at = script.index("Set fld = FindOrFail(ID_SAVE, ok)")
+    assert fail_at < save_at
+
+
+def test_an_unreachable_role_grid_aborts_before_the_save():
+    """Fail closed. Saving anyway would create the user with no roles and journal it as
+    a success — reporting work that never happened (CLAUDE.md Rule 12)."""
+    script = build_run_script(USERS, "j.jsonl", dry_run=False)
+
+    grid_fail_at = script.index('"role grid not found - nothing was saved"')
+    save_at = script.index("Set fld = FindOrFail(ID_SAVE, ok)")
+    assert grid_fail_at < save_at
+
+
+def test_missing_grid_never_reads_as_the_user_holding_no_roles():
+    """An empty dictionary from a failed grid read means every role looks new, and
+    rollback then strips roles the user held before the run ever touched them
+    (spec §8). ReadExistingRoles must distinguish "no roles" from "could not read"."""
+    script = build_run_script(USERS, "j.jsonl", dry_run=False)
+
+    assert "Set existing = ReadExistingRoles(ok)" in script
+    read_at = script.index("Set existing = ReadExistingRoles(ok)")
+    guard_at = script.index("If Not ok Then", read_at)
+    append_at = script.index("added = AppendRoles(roleData, existing, ok)")
+    assert read_at < guard_at < append_at
+
+
+def test_probe_covers_every_control_user_creation_needs():
+    """The original probe checked only the initial screen, so it passed green on a
+    system where creating a user was impossible. That gap is the whole bug."""
+    script = build_probe_script("probe.jsonl")
+
+    for control in ("tab_address", "field_last_name", "tab_roles", "role_grid"):
+        assert control in script, f"{control} is not probed"
+
+
+def test_probe_enters_create_mode_but_never_saves():
+    """Phase 2 has to reach the detail screen, but a probe that writes is not a probe."""
+    script = build_probe_script("probe.jsonl")
+
+    assert "PROBE_USER" in script
+    # Save is the only press that would commit anything.
+    assert SU01_IDS["btn_save"] not in script.split("' --- phase 2")[1]
+    # It backs out by re-entering the transaction rather than guessing a modal button.
+    assert '.Text = "/nSU01"' in script
 
 
 def test_rollback_script_only_touches_named_roles():

@@ -47,7 +47,13 @@ SU01_IDS: dict[str, str] = {
 }
 
 # Controls the preflight probe must find before any write is attempted (spec §7).
-PROBE_CONTROLS = [
+#
+# Split by screen, because the detail controls do not exist on the SU01 initial
+# screen — they only appear once create/change mode is entered. Probing only the
+# initial screen is what let a landscape mismatch through: the probe passed, and
+# user creation then failed at save because the mandatory last-name write had been
+# silently skipped. The probe enters create mode to check the second list.
+PROBE_INITIAL_CONTROLS = [
     "okcd",
     "statusbar",
     "username_field",
@@ -55,4 +61,19 @@ PROBE_CONTROLS = [
     "btn_change",
     "btn_create",
     "btn_save",
+]
+
+# Reachable only inside create/change mode, and every one is load-bearing:
+# without tab_address + field_last_name a user cannot be created at all, and
+# without the role grid no role can be assigned.
+#
+# The optional field controls (first name, email, password, user group, SNC) are
+# deliberately absent — a missing one skips optional data rather than failing the
+# run, so probing them would turn a cosmetic gap into a hard stop.
+PROBE_DETAIL_CONTROLS = [
+    "tab_address",
+    "field_last_name",
+    "tab_logondata",
+    "tab_roles",
+    "role_grid",
 ]

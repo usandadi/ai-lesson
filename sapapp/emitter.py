@@ -13,7 +13,7 @@ escaping bugs from generated code nobody wants to debug at 2am.
 import json
 
 from .models import UserSpec
-from .screen_ids import PROBE_CONTROLS, SU01_IDS
+from .screen_ids import PROBE_DETAIL_CONTROLS, PROBE_INITIAL_CONTROLS, SU01_IDS
 
 
 def _vbs_string(value: str) -> str:
@@ -202,11 +202,11 @@ End Function
 
 ' Reads the Roles tab of the currently displayed user. Feeds both the additive
 ' merge and the rollback delta (spec §8).
-Function ReadExistingRoles()
-  Dim ok, tab, grid, i, value, found
+Function ReadExistingRoles(ByRef ok)
+  Dim tabok, tab, grid, i, value, found
   Set found = CreateObject("Scripting.Dictionary")
-  Set tab = FindOrFail(ID_TAB_ROLES, ok)
-  If ok Then tab.Select
+  Set tab = FindOrFail(ID_TAB_ROLES, tabok)
+  If tabok Then tab.Select
   Set grid = FindOrFail(ID_GRID, ok)
   If ok Then
     For i = 0 To grid.RowCount - 1
@@ -247,11 +247,11 @@ End Function
 
 ' Appends at the first free row, never a fixed index — writing to an occupied
 ' row would clobber a role the user already holds (spec §7).
-Function AppendRoles(roleData, existing)
-  Dim ok, tab, grid, i, parts, name, target, added
+Function AppendRoles(roleData, existing, ByRef ok)
+  Dim tabok, tab, grid, i, parts, name, target, added
   added = Array()
-  Set tab = FindOrFail(ID_TAB_ROLES, ok)
-  If ok Then tab.Select
+  Set tab = FindOrFail(ID_TAB_ROLES, tabok)
+  If tabok Then tab.Select
   Set grid = FindOrFail(ID_GRID, ok)
   If Not ok Then
     AppendRoles = Array()
@@ -300,7 +300,17 @@ Sub ProcessUser(uname, lastname, firstname, email, sncname, ugroup, pwd, roleDat
   End If
 
   If exists = 1 Then
-    Set existing = ReadExistingRoles()
+    ' A missing grid used to yield an empty dictionary, which reads as "this user
+    ' holds no roles" - so every role looked new, and rollback would later strip
+    ' roles the user held before the run (spec §8).
+    Set existing = ReadExistingRoles(ok)
+    If Not ok Then
+      Failures = Failures + 1
+      JLog "user", uname, "failed", "role grid not found - run the probe against this system", Array(), Array()
+      If Failures >= ABORT_AFTER Then Aborted = True
+      GotoSU01
+      Exit Sub
+    End If
   Else
     Set existing = CreateObject("Scripting.Dictionary")
   End If
@@ -336,8 +346,19 @@ Sub ProcessUser(uname, lastname, firstname, email, sncname, ugroup, pwd, roleDat
     created = True
     Set tab = FindOrFail(ID_TAB_ADDRESS, ok)
     If ok Then tab.Select
+    ' Last name is mandatory - SU01 will not save a user without it. Skipping this
+    ' write silently is what made user creation fail with SAP's "fill in all
+    ' required entry fields" instead of naming the real cause: a control path that
+    ' does not match this system. Fail here, before anything is written.
     Set fld = FindOrFail(ID_LASTNAME, ok)
-    If ok Then fld.Text = lastname
+    If Not ok Then
+      Failures = Failures + 1
+      JLog "user", uname, "failed", "last name field not found - run the probe against this system", Array(), skipped
+      If Failures >= ABORT_AFTER Then Aborted = True
+      GotoSU01
+      Exit Sub
+    End If
+    fld.Text = lastname
     If firstname <> "" Then
       Set fld = FindOrFail(ID_FIRSTNAME, ok)
       If ok Then fld.Text = firstname
@@ -370,7 +391,16 @@ Sub ProcessUser(uname, lastname, firstname, email, sncname, ugroup, pwd, roleDat
     End If
   End If
 
-  added = AppendRoles(roleData, existing)
+  ' Fail closed: if the grid is unreachable we exit before the save, so a new user
+  ' is never created role-less and journaled as a success.
+  added = AppendRoles(roleData, existing, ok)
+  If Not ok Then
+    Failures = Failures + 1
+    JLog "user", uname, "failed", "role grid not found - nothing was saved", Array(), skipped
+    If Failures >= ABORT_AFTER Then Aborted = True
+    GotoSU01
+    Exit Sub
+  End If
 
   Set fld = FindOrFail(ID_SAVE, ok)
   If Not ok Then
@@ -646,16 +676,26 @@ def build_rollback_script(
     return "".join(parts)
 
 
-def build_probe_script(journal_path: str, ids: dict[str, str] | None = None) -> str:
+def build_probe_script(
+    journal_path: str,
+    ids: dict[str, str] | None = None,
+    probe_username: str = "ZZPROBEDUMMY",
+) -> str:
     """Preflight: assert every control exists before any write (spec §7).
 
-    A layout mismatch fails at step zero rather than on user 47. Writes nothing.
+    A layout mismatch fails at step zero rather than on user 47.
+
+    Two phases, because the controls user creation depends on do not exist on the
+    SU01 initial screen. Phase 2 enters create mode for `probe_username` to reach
+    them, then leaves via /nSU01 without ever pressing Save — so no user is
+    created. Checking only phase 1 is what let a create-path mismatch through.
     """
     ids = {**SU01_IDS, **(ids or {})}
     lines = [
         _header("PREFLIGHT PROBE - writes nothing", "", ""),
         "Option Explicit",
-        "Dim SapGui, App, Conn, Session, FSO, Journal, ctl, missing, Q",
+        "Dim SapGui, App, Conn, Session, FSO, Journal, ctl, missing, Q, bar",
+        f"Const PROBE_USER = {_vbs_string(probe_username)}",
         "Q = Chr(34)",
         "missing = 0",
         'Set FSO = CreateObject("Scripting.FileSystemObject")',
@@ -685,9 +725,10 @@ def build_probe_script(journal_path: str, ids: dict[str, str] | None = None) -> 
         'Session.findById("wnd[0]").sendVKey 0',
         "",
     ]
-    for control in PROBE_CONTROLS:
-        lines += [
+    def check(control: str) -> list[str]:
+        return [
             "On Error Resume Next",
+            "Set ctl = Nothing",
             f"Set ctl = Session.findById({_vbs_string(ids[control])})",
             "If Err.Number <> 0 Or ctl Is Nothing Then",
             f'  Note "missing", "{control}", "control not found on this system"',
@@ -697,7 +738,45 @@ def build_probe_script(journal_path: str, ids: dict[str, str] | None = None) -> 
             "On Error Goto 0",
             "",
         ]
+
+    lines.append("' --- phase 1: SU01 initial screen ---")
+    lines.append("")
+    for control in PROBE_INITIAL_CONTROLS:
+        lines += check(control)
+
+    # Phase 2 is pointless if the initial screen is already wrong, and pressing
+    # Create against a mismatched screen is exactly the blind interaction the spec
+    # forbids. Stop instead.
     lines += [
+        "' --- phase 2: create/change detail screen ---",
+        "' These controls only exist inside create mode, which is why probing the",
+        "' initial screen alone could pass on a system where creation was impossible.",
+        "If missing > 0 Then",
+        '  Note "skipped", "", "initial screen incomplete - detail controls not probed"',
+        "  Journal.Close",
+        "  WScript.Quit missing",
+        "End If",
+        "",
+        f'Session.findById({_vbs_string(ids["username_field"])}).Text = PROBE_USER',
+        f'Session.findById({_vbs_string(ids["btn_create"])}).press',
+        "",
+        f'Set bar = Session.findById({_vbs_string(ids["statusbar"])})',
+        'If bar.MessageType = "E" Or bar.MessageType = "A" Then',
+        '  Note "skipped", "", "could not enter create mode: " & bar.Text',
+        "  Journal.Close",
+        "  WScript.Quit 1",
+        "End If",
+        "",
+    ]
+    for control in PROBE_DETAIL_CONTROLS:
+        lines += check(control)
+
+    lines += [
+        "' Leave create mode without saving. Save is never pressed and no data was",
+        "' entered beyond the username, so nothing is created.",
+        f'Session.findById({_vbs_string(ids["okcd"])}).Text = "/nSU01"',
+        'Session.findById("wnd[0]").sendVKey 0',
+        "",
         'Note "done", "", "missing=" & missing',
         "Journal.Close",
         "WScript.Quit missing",
